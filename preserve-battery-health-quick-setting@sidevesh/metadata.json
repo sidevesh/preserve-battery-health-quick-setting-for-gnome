@@ -1,13 +1,11 @@
 {
   "name": "Preserve Battery Health Quick Setting",
-  "description": "Quick setting toggle to preserve battery health (enable / disable charge threshold).",
+  "description": "Quick setting toggle to preserve battery health (enable / disable charge threshold)",
   "uuid": "preserve-battery-health-quick-setting@sidevesh",
   "shell-version": [
-    "45",
-    "46",
-    "47",
+    "48",
     "49"
   ],
-  "url": "https://github.com/sidevesh/preserve-battery-health-quick-setting",
+  "url": "https://github.com/sidevesh/preserve-battery-health-quick-setting-for-gnome",
   "version": 1
 }
