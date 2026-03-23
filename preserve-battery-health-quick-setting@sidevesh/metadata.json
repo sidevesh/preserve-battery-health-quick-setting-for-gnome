@@ -1,0 +1,13 @@
+{
+  "name": "Preserve Battery Health Quick Setting",
+  "description": "Quick setting toggle to preserve battery health (enable/disable charge threshold).",
+  "uuid": "preserve-battery-health-quick-setting@sidevesh",
+  "shell-version": [
+    "45",
+    "46",
+    "47",
+    "49"
+  ],
+  "url": "https://github.com/sidevesh/preserve-battery-health-quick-setting",
+  "version": 1
+}
