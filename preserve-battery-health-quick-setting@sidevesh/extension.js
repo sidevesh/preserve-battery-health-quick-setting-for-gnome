@@ -146,11 +146,13 @@ class PreserveBatteryHealthIndicator extends QuickSettings.SystemIndicator {
 
 export default class PreserveBatteryHealthExtension extends Extension {
     enable() {
+        if (this._indicator) return;
         this._indicator = new PreserveBatteryHealthIndicator();
         Main.panel.statusArea.quickSettings.addExternalIndicator(this._indicator);
     }
 
     disable() {
+        this._indicator.quickSettingsItems.forEach(item => item.destroy());
         this._indicator.destroy();
         this._indicator = null;
     }
