@@ -10,6 +10,12 @@ const UPowerIface = `
     <method name="EnumerateDevices">
       <arg name="devices" type="ao" direction="out"/>
     </method>
+    <signal name="DeviceAdded">
+      <arg name="device" type="o"/>
+    </signal>
+    <signal name="DeviceRemoved">
+      <arg name="device" type="o"/>
+    </signal>
   </interface>
 </node>`;
 
@@ -39,7 +45,8 @@ class PreserveBatteryHealthToggle extends QuickSettings.QuickToggle {
             toggleMode: true,
         });
 
-        this._deviceProxies = [];
+        // Map from D-Bus object path to { proxy, signalId }
+        this._deviceProxies = new Map();
         this._cancellable = new Gio.Cancellable();
 
         this.connect('clicked', () => this._toggleChargeThreshold());
@@ -65,49 +72,76 @@ class PreserveBatteryHealthToggle extends QuickSettings.QuickToggle {
                 );
             });
 
-            const devices = await this._upowerProxy.EnumerateDevicesAsync();
-            for (const path of devices[0]) {
-                const deviceProxy = await new Promise((resolve, reject) => {
-                    new UPowerDeviceProxy(
-                        Gio.DBus.system,
-                        'org.freedesktop.UPower',
-                        path,
-                        (proxy, error) => {
-                            if (error) {
-                                reject(error);
-                            } else {
-                                resolve(proxy);
-                            }
-                        },
-                        this._cancellable
-                    );
-                });
+            this._deviceAddedId = this._upowerProxy.connectSignal('DeviceAdded',
+                (_proxy, _sender, [path]) => this._addDevice(path));
+            this._deviceRemovedId = this._upowerProxy.connectSignal('DeviceRemoved',
+                (_proxy, _sender, [path]) => this._removeDevice(path));
 
-                // UP_DEVICE_KIND_BATTERY is 2
-                if (deviceProxy.Type === 2 && deviceProxy.PowerSupply && deviceProxy.ChargeThresholdSupported) {
-                    this._deviceProxies.push(deviceProxy);
-                    deviceProxy.connect('g-properties-changed', () => this._sync());
-                }
-            }
+            const devices = await this._upowerProxy.EnumerateDevicesAsync();
+            for (const path of devices[0])
+                await this._addDevice(path);
 
             this._sync();
-            
-            if (this._deviceProxies.length === 0) {
-                this.visible = false;
-            } else {
-                this.visible = true;
-            }
         } catch (e) {
-            console.log('Failed to setup UPower DBus:', e);
+            if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                console.log('Failed to setup UPower DBus:', e);
             this.visible = false;
         }
     }
 
+    async _addDevice(path) {
+        if (this._deviceProxies.has(path))
+            return; // already tracking this device
+
+        try {
+            const deviceProxy = await new Promise((resolve, reject) => {
+                new UPowerDeviceProxy(
+                    Gio.DBus.system,
+                    'org.freedesktop.UPower',
+                    path,
+                    (proxy, error) => {
+                        if (error) {
+                            reject(error);
+                        } else {
+                            resolve(proxy);
+                        }
+                    },
+                    this._cancellable
+                );
+            });
+
+            // UP_DEVICE_KIND_BATTERY is 2
+            if (deviceProxy.Type === 2 && deviceProxy.PowerSupply && deviceProxy.ChargeThresholdSupported) {
+                const signalId = deviceProxy.connect('g-properties-changed', () => this._sync());
+                this._deviceProxies.set(path, {proxy: deviceProxy, signalId});
+                this._sync();
+            }
+        } catch (e) {
+            if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                console.log('Failed to add device proxy:', e);
+        }
+    }
+
+    _removeDevice(path) {
+        const entry = this._deviceProxies.get(path);
+        if (!entry)
+            return;
+
+        entry.proxy.disconnect(entry.signalId);
+        this._deviceProxies.delete(path);
+        this._sync();
+    }
+
     _sync() {
-        if (this._deviceProxies.length === 0) return;
-        
+        if (this._deviceProxies.size === 0) {
+            this.visible = false;
+            return;
+        }
+
+        this.visible = true;
+
         let anyEnabled = false;
-        for (const proxy of this._deviceProxies) {
+        for (const {proxy} of this._deviceProxies.values()) {
             if (proxy.ChargeThresholdEnabled) {
                 anyEnabled = true;
                 break;
@@ -119,8 +153,8 @@ class PreserveBatteryHealthToggle extends QuickSettings.QuickToggle {
 
     async _toggleChargeThreshold() {
         const newState = this.checked;
-        
-        for (const proxy of this._deviceProxies) {
+
+        for (const {proxy} of this._deviceProxies.values()) {
             try {
                 await proxy.EnableChargeThresholdAsync(newState);
             } catch (e) {
@@ -131,6 +165,22 @@ class PreserveBatteryHealthToggle extends QuickSettings.QuickToggle {
 
     destroy() {
         this._cancellable.cancel();
+
+        if (this._upowerProxy) {
+            if (this._deviceAddedId) {
+                this._upowerProxy.disconnectSignal(this._deviceAddedId);
+                this._deviceAddedId = null;
+            }
+            if (this._deviceRemovedId) {
+                this._upowerProxy.disconnectSignal(this._deviceRemovedId);
+                this._deviceRemovedId = null;
+            }
+        }
+
+        for (const {proxy, signalId} of this._deviceProxies.values())
+            proxy.disconnect(signalId);
+        this._deviceProxies.clear();
+
         super.destroy();
     }
 });
