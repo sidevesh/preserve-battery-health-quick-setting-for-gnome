@@ -4,8 +4,9 @@
   "uuid": "preserve-battery-health-quick-setting@sidevesh",
   "shell-version": [
     "48",
-    "49"
+    "49",
+    "50"
   ],
   "url": "https://github.com/sidevesh/preserve-battery-health-quick-setting-for-gnome",
-  "version": 2
+  "version": 3
 }
