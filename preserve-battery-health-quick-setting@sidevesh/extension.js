@@ -33,6 +33,8 @@ const UPowerDeviceIface = `
   </interface>
 </node>`;
 
+const UP_DEVICE_KIND_BATTERY = 2;
+
 const UPowerProxy = Gio.DBusProxy.makeProxyWrapper(UPowerIface);
 const UPowerDeviceProxy = Gio.DBusProxy.makeProxyWrapper(UPowerDeviceIface);
 
@@ -45,7 +47,6 @@ class PreserveBatteryHealthToggle extends QuickSettings.QuickToggle {
             toggleMode: true,
         });
 
-        // Map from D-Bus object path to { proxy, signalId }
         this._deviceProxies = new Map();
         this._cancellable = new Gio.Cancellable();
 
@@ -83,15 +84,16 @@ class PreserveBatteryHealthToggle extends QuickSettings.QuickToggle {
 
             this._sync();
         } catch (e) {
-            if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
-                console.log('Failed to setup UPower DBus:', e);
+            if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                return;
+            console.error('Failed to set up UPower D-Bus:', e);
             this.visible = false;
         }
     }
 
     async _addDevice(path) {
         if (this._deviceProxies.has(path))
-            return; // already tracking this device
+            return;
 
         try {
             const deviceProxy = await new Promise((resolve, reject) => {
@@ -110,15 +112,14 @@ class PreserveBatteryHealthToggle extends QuickSettings.QuickToggle {
                 );
             });
 
-            // UP_DEVICE_KIND_BATTERY is 2
-            if (deviceProxy.Type === 2 && deviceProxy.PowerSupply && deviceProxy.ChargeThresholdSupported) {
+            if (deviceProxy.Type === UP_DEVICE_KIND_BATTERY && deviceProxy.PowerSupply && deviceProxy.ChargeThresholdSupported) {
                 const signalId = deviceProxy.connect('g-properties-changed', () => this._sync());
                 this._deviceProxies.set(path, {proxy: deviceProxy, signalId});
                 this._sync();
             }
         } catch (e) {
             if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
-                console.log('Failed to add device proxy:', e);
+                console.error('Failed to add device proxy:', e);
         }
     }
 
@@ -158,7 +159,7 @@ class PreserveBatteryHealthToggle extends QuickSettings.QuickToggle {
             try {
                 await proxy.EnableChargeThresholdAsync(newState);
             } catch (e) {
-                console.log('Failed to set charge threshold:', e);
+                console.error('Failed to set charge threshold:', e);
             }
         }
     }
@@ -196,7 +197,6 @@ class PreserveBatteryHealthIndicator extends QuickSettings.SystemIndicator {
 
 export default class PreserveBatteryHealthExtension extends Extension {
     enable() {
-        if (this._indicator) return;
         this._indicator = new PreserveBatteryHealthIndicator();
         Main.panel.statusArea.quickSettings.addExternalIndicator(this._indicator);
     }
