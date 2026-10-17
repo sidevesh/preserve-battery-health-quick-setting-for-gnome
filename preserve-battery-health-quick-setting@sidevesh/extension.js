@@ -35,9 +35,6 @@ const UPowerDeviceIface = `
 
 const UP_DEVICE_KIND_BATTERY = 2;
 
-const UPowerProxy = Gio.DBusProxy.makeProxyWrapper(UPowerIface);
-const UPowerDeviceProxy = Gio.DBusProxy.makeProxyWrapper(UPowerDeviceIface);
-
 const PreserveBatteryHealthToggle = GObject.registerClass(
 class PreserveBatteryHealthToggle extends QuickSettings.QuickToggle {
     _init() {
@@ -46,6 +43,9 @@ class PreserveBatteryHealthToggle extends QuickSettings.QuickToggle {
             iconName: 'battery-good-symbolic',
             toggleMode: true,
         });
+
+        this._UPowerProxy = Gio.DBusProxy.makeProxyWrapper(UPowerIface);
+        this._UPowerDeviceProxy = Gio.DBusProxy.makeProxyWrapper(UPowerDeviceIface);
 
         this._deviceProxies = new Map();
         this._cancellable = new Gio.Cancellable();
@@ -58,7 +58,7 @@ class PreserveBatteryHealthToggle extends QuickSettings.QuickToggle {
     async _setupDBus() {
         try {
             this._upowerProxy = await new Promise((resolve, reject) => {
-                new UPowerProxy(
+                new this._UPowerProxy(
                     Gio.DBus.system,
                     'org.freedesktop.UPower',
                     '/org/freedesktop/UPower',
@@ -97,7 +97,7 @@ class PreserveBatteryHealthToggle extends QuickSettings.QuickToggle {
 
         try {
             const deviceProxy = await new Promise((resolve, reject) => {
-                new UPowerDeviceProxy(
+                new this._UPowerDeviceProxy(
                     Gio.DBus.system,
                     'org.freedesktop.UPower',
                     path,
